@@ -329,3 +329,16 @@ select option { background:#1a1d27; }
 
 /* App loading state */
 .app-loading { display:flex; align-items:center; justify-content:center; height:100vh; color:var(--muted); font-family:var(--mono); font-size:13px; }
+
+/* Lock screen (employee PIN) */
+.lock-screen { display:flex; align-items:center; justify-content:center; height:100vh; background:var(--bg); font-family:var(--font); }
+.lock-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:32px 40px; text-align:center; width:320px; }
+.lock-title { font-size:13px; color:var(--muted); margin:10px 0 16px; }
+.lock-dots { display:flex; gap:12px; justify-content:center; margin-bottom:10px; }
+.lock-dot { width:14px; height:14px; border-radius:50%; border:1px solid var(--border); background:var(--card); transition:background .1s, border-color .1s; }
+.lock-dot.filled { background:var(--green); border-color:var(--green); }
+.lock-status { font-size:11px; color:var(--muted); min-height:16px; margin-bottom:10px; }
+.lock-error { color:var(--accent); font-weight:600; }
+
+/* Admin gate (checking / denied) */
+.admin-gate { display:flex; flex-direction:column; gap:12px; align-items:center; justify-content:center; height:calc(100vh - 52px); color:var(--muted); font-family:var(--font); font-size:13px; }

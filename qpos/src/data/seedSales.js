@@ -58,6 +58,7 @@ export function generateSeedSales() {
         cashGiven: method === "cash" ? Math.ceil(totals.total / 5) * 5 : null,
         change: method === "cash" ? Math.ceil(totals.total / 5) * 5 - totals.total : null,
         surcharge: 0,
+        posted: true, // demo history counts as real sales, not training
       });
     }
   }

@@ -58,6 +58,7 @@ function rowToSale(row, items) {
     cashGiven: row.cash_given != null ? Number(row.cash_given) : null,
     change: row.change != null ? Number(row.change) : null,
     surcharge: Number(row.surcharge || 0),
+    posted: !!row.posted,
   };
 }
 
@@ -75,6 +76,7 @@ function saleToRow(sale) {
     cash_given: sale.cashGiven,
     change: sale.change,
     surcharge: sale.surcharge || 0,
+    posted: sale.posted ?? false,
   };
 }
 
@@ -106,6 +108,11 @@ export async function insert(sale) {
   const itemRows = sale.items.map((it) => itemToRow(sale.id, it));
   const { error: itemErr } = await supabase.from(ITEMS_TABLE).insert(itemRows);
   if (itemErr) throw itemErr;
+}
+
+export async function setPosted(id, posted) {
+  const { error } = await supabase.from(SALES_TABLE).update({ posted }).eq("id", id);
+  if (error) throw error;
 }
 
 // One-time seed of 30 days of demo sales when the table is empty.

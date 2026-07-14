@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Nav from "./components/Nav";
 import PaymentModal from "./components/PaymentModal";
 import Receipt from "./components/Receipt";
+import LockScreen from "./components/LockScreen";
 import Register from "./pages/Register";
 import Inventory from "./pages/Inventory";
 import Analytics from "./pages/Analytics";
 import Sales from "./pages/Sales";
 import AIAdvisor from "./pages/AIAdvisor";
 import CustomerDisplay from "./pages/CustomerDisplay";
+import Admin from "./pages/Admin";
 import { PROVINCES, INITIAL_INVENTORY, calcTax } from "./data/constants";
 import { generateSeedSales } from "./data/seedSales";
 import * as inventoryApi from "./lib/inventoryApi";
@@ -29,6 +31,8 @@ export default function App() {
   const [payMethod, setPayMethod] = useState("cash");
   const [cashGiven, setCashGiven] = useState("");
   const [sales, setSales] = useState([]);
+  const [pendingTxn, setPendingTxn] = useState(null); // completed payment awaiting post/training choice
+  const [employee, setEmployee] = useState(null); // null = locked (PIN screen)
   const [lastReceipt, setLastReceipt] = useState(null);
   const [clock, setClock] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -50,7 +54,6 @@ export default function App() {
   const [invSort, setInvSort] = useState({ col: "name", dir: "asc" });
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [auditLog, setAuditLog] = useState([]);
-  const [editorName, setEditorName] = useState("Manager");
   const [showAudit, setShowAudit] = useState(false);
   const [anaTab, setAnaTab] = useState("overview");
   const [barcodeMode, setBarcodeMode] = useState(false);
@@ -110,7 +113,7 @@ export default function App() {
   };
 
   const addAuditEntry = async (itemName, field, oldVal, newVal) => {
-    const entry = await auditLogApi.insert({ editor: editorName, item: itemName, field, from: oldVal, to: newVal });
+    const entry = await auditLogApi.insert({ editor: employee?.name || "Unknown", item: itemName, field, from: oldVal, to: newVal });
     setAuditLog((prev) => [entry, ...prev].slice(0, 500));
   };
 
@@ -140,14 +143,18 @@ export default function App() {
   };
   useEffect(() => { applyPreset("30d"); }, []);
 
+  // Main Sales Log, Analytics, and all KPI calculations see ONLY posted
+  // transactions — training (unposted) sales are visible on /admin only.
+  const postedSales = useMemo(() => sales.filter((s) => s.posted), [sales]);
+
   const filteredSales = useMemo(() => {
-    return sales.filter((s) => {
+    return postedSales.filter((s) => {
       const d = new Date(s.time);
       if (dateFrom && d < new Date(dateFrom + "T00:00:00")) return false;
       if (dateTo && d > new Date(dateTo + "T23:59:59")) return false;
       return true;
     });
-  }, [sales, dateFrom, dateTo]);
+  }, [postedSales, dateFrom, dateTo]);
 
   // ── Categories (derived live from inventory) ──
   const categories = useMemo(() => ["All", ...new Set(inventory.map((i) => i.category))], [inventory]);
@@ -178,7 +185,11 @@ export default function App() {
   const taxLabel = prov.hst > 0 ? "HST" : (prov.gst > 0 && prov.pst > 0 ? "GST+PST" : prov.gst > 0 ? "GST" : "—");
 
   // ── Complete sale ──
-  const completeSale = async () => {
+  // Payment first builds a pending transaction, then a confirmation dialog
+  // asks whether to post it (real sale) or save it as training. Only the
+  // posted flag differs — everything else, including the stock deduction,
+  // is identical for both.
+  const completeSale = () => {
     const txn = {
       id: `TXN-${Date.now()}`, time: new Date().toISOString(), province, method: payMethod,
       items: [...cartWithTax], totals: { ...totals },
@@ -186,19 +197,37 @@ export default function App() {
       change: payMethod === "cash" ? change : null,
       surcharge,
     };
+    setPendingTxn(txn);
+    setModal("post");
+  };
+
+  const finalizeSale = async (posted) => {
+    if (!pendingTxn) return;
+    const txn = { ...pendingTxn, posted };
     await salesApi.insert(txn);
-    for (const ci of cart) {
+    // Stock deduction happens regardless of posted status — training sales
+    // still reduce inventory.
+    for (const ci of txn.items) {
       const inv = inventory.find((i) => i.id === ci.id);
       if (inv) await inventoryApi.update(inv.id, { stock: Math.max(0, inv.stock - ci.qty) });
     }
     setInventory((prev) => prev.map((inv) => {
-      const ci = cart.find((c) => c.id === inv.id);
+      const ci = txn.items.find((c) => c.id === inv.id);
       if (!ci) return inv;
       return { ...inv, stock: Math.max(0, inv.stock - ci.qty) };
     }));
     setSales((prev) => [txn, ...prev]);
-    setLastReceipt(txn); setCart([]); setCashGiven(""); setModal("receipt");
+    setLastReceipt(txn); setPendingTxn(null); setCart([]); setCashGiven(""); setModal("receipt");
     broadcastCart([], { sub: 0, gst: 0, pst: 0, hst: 0, surcharge: 0, total: 0 }, payMethod, "paid");
+  };
+
+  // ── Toggle a transaction's posted status (admin page only) ──
+  const togglePosted = async (sale) => {
+    const next = !sale.posted;
+    await salesApi.setPosted(sale.id, next);
+    setSales((prev) => prev.map((s) => (s.id === sale.id ? { ...s, posted: next } : s)));
+    await addAuditEntry(sale.id, "posted", String(sale.posted), String(next));
+    showToast(next ? `✅ ${sale.id} posted — now included in reports.` : `↩️ ${sale.id} marked as training — excluded from reports.`);
   };
 
   // ── Filtered items ──
@@ -258,8 +287,8 @@ export default function App() {
     const now = new Date();
     const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
     const twoWeeksAgo = new Date(now); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-    const thisWeekSales = sales.filter((s) => new Date(s.time) >= weekAgo);
-    const lastWeekSales = sales.filter((s) => new Date(s.time) >= twoWeeksAgo && new Date(s.time) < weekAgo);
+    const thisWeekSales = postedSales.filter((s) => new Date(s.time) >= weekAgo);
+    const lastWeekSales = postedSales.filter((s) => new Date(s.time) >= twoWeeksAgo && new Date(s.time) < weekAgo);
     const thisWeekRev = thisWeekSales.reduce((a, s) => a + s.totals.total, 0);
     const lastWeekRev = lastWeekSales.reduce((a, s) => a + s.totals.total, 0);
     const wowChange = lastWeekRev > 0 ? ((thisWeekRev - lastWeekRev) / lastWeekRev * 100) : 0;
@@ -328,7 +357,7 @@ export default function App() {
       netMarginPct: totalRev > 0 ? (((totalRev - totalCost - totalTaxAmt) / totalRev) * 100) : 0,
       totalSurcharge,
     };
-  }, [filteredSales, inventory, sales]);
+  }, [filteredSales, inventory, postedSales]);
 
   // ── Inventory edit helpers ──
   const updateInv = async (id, field, rawVal) => {
@@ -483,6 +512,12 @@ Be concise, data-driven, and actionable. Use actual numbers from the data above.
   const isCustomerWindow = typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("mode") === "customer";
 
+  // ── Hidden admin page (URL /admin — deliberately absent from the nav).
+  // Route hiding is cosmetic only; real access control is the owner-role
+  // re-check inside <Admin> plus (eventually) Supabase RLS policies.
+  const isAdminWindow = typeof window !== "undefined" &&
+    window.location.pathname.replace(/\/+$/, "") === "/admin";
+
   const [cfdState, setCfdState] = useState({
     cart: [], totals: { sub: 0, gst: 0, pst: 0, hst: 0, surcharge: 0, total: 0 },
     status: "idle", method: "cash", province: "ON",
@@ -522,6 +557,12 @@ Be concise, data-driven, and actionable. Use actual numbers from the data above.
     );
   }
 
+  // PIN lock screen — the POS (and admin page) is unusable until an active
+  // employee unlocks it. The customer display window above never locks.
+  if (!employee) {
+    return <LockScreen onUnlock={setEmployee} />;
+  }
+
   if (dataLoading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "var(--muted)", fontFamily: "var(--font)" }}>
@@ -530,11 +571,30 @@ Be concise, data-driven, and actionable. Use actual numbers from the data above.
     );
   }
 
+  if (isAdminWindow) {
+    return (
+      <>
+        <nav className="nav">
+          <div className="nav-logo">Q<span>POS</span></div>
+          <div className="nav-right">
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>👤 <strong style={{ color: "var(--text)" }}>{employee.name}</strong></span>
+            <button className="nav-tab" style={{ borderRadius: 6, border: "1px solid var(--border)", fontSize: 11, padding: "4px 10px" }}
+              onClick={() => setEmployee(null)} title="Lock">🔒 Lock</button>
+            <span className="clock">{clock}</span>
+          </div>
+        </nav>
+        <Admin employee={employee} sales={sales} onTogglePosted={togglePosted} addAuditEntry={addAuditEntry} showToast={showToast} />
+        {toast && <div className={`toast ${toast.type}`}>{toast.msg}</div>}
+      </>
+    );
+  }
+
   const lowStockCount = inventory.filter((i) => i.stock > 0 && i.stock <= 10).length;
 
   return (
     <>
-      <Nav page={page} setPage={setPage} province={province} setProvince={setProvince} clock={clock} onShowCFDPreview={() => setShowCFDPreview(true)} />
+      <Nav page={page} setPage={setPage} province={province} setProvince={setProvince} clock={clock}
+        onShowCFDPreview={() => setShowCFDPreview(true)} employee={employee} onLock={() => setEmployee(null)} />
 
       {page === "pos" && (
         <Register
@@ -549,7 +609,7 @@ Be concise, data-driven, and actionable. Use actual numbers from the data above.
 
       {page === "inventory" && (
         <Inventory
-          editorName={editorName} setEditorName={setEditorName}
+          editorName={employee.name}
           barcodeMode={barcodeMode} setBarcodeMode={setBarcodeMode}
           showAudit={showAudit} setShowAudit={setShowAudit} auditLog={auditLog} addNewItem={addNewItem}
           barcodeInputRef={barcodeInputRef} handleBarcodeInput={handleBarcodeInput}
@@ -592,6 +652,24 @@ Be concise, data-driven, and actionable. Use actual numbers from the data above.
       />
 
       <Receipt open={modal === "receipt"} receipt={lastReceipt} onClose={() => setModal(null)} onNewSale={() => { setModal(null); setPage("pos"); }} />
+
+      {modal === "post" && pendingTxn && (
+        <div className="modal-backdrop">
+          <div className="del-modal">
+            <div className="del-modal-title">🧾 Post this transaction?</div>
+            <div className="del-modal-sub">
+              <strong>{pendingTxn.id}</strong> · {`$${pendingTxn.totals.total.toFixed(2)}`}<br />
+              <strong>Post</strong> records it as a real sale (counted in reports).<br />
+              <strong>Save as Training</strong> keeps it out of the Sales Log and analytics.<br />
+              Stock is deducted either way.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button className="btn btn-secondary" style={{ minWidth: 130 }} onClick={() => finalizeSale(false)}>Save as Training</button>
+              <button className="btn btn-green" style={{ minWidth: 130 }} onClick={() => finalizeSale(true)}>✓ Post</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCFDPreview && (
         <div className="cfd-preview-modal">

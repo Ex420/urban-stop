@@ -8,7 +8,7 @@ const TABS = [
   { id: "ai", label: "🤖 AI Advisor" },
 ];
 
-export default function Nav({ page, setPage, province, setProvince, clock, onShowCFDPreview }) {
+export default function Nav({ page, setPage, province, setProvince, clock, onShowCFDPreview, employee, onLock }) {
   return (
     <nav className="nav">
       <div className="nav-logo">Q<span>POS</span></div>
@@ -18,6 +18,19 @@ export default function Nav({ page, setPage, province, setProvince, clock, onSho
         </button>
       ))}
       <div className="nav-right">
+        {employee && (
+          <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
+            👤 <strong style={{ color: "var(--text)" }}>{employee.name}</strong>
+          </span>
+        )}
+        <button
+          className="nav-tab"
+          style={{ borderRadius: 6, border: "1px solid var(--border)", fontSize: 11, padding: "4px 10px" }}
+          onClick={onLock}
+          title="Lock the register for shift change"
+        >
+          🔒 Lock
+        </button>
         <button
           className="nav-tab"
           style={{ borderRadius: 6, border: "1px solid var(--green)", color: "var(--green)", fontSize: 11, padding: "4px 10px" }}

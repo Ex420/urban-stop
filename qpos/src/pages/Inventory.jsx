@@ -15,7 +15,7 @@ function SortTh({ col, label, invSort, toggleSort }) {
 }
 
 export default function Inventory({
-  editorName, setEditorName, barcodeMode, setBarcodeMode, showAudit, setShowAudit, auditLog, addNewItem,
+  editorName, barcodeMode, setBarcodeMode, showAudit, setShowAudit, auditLog, addNewItem,
   barcodeInputRef, handleBarcodeInput, barcodeScanHit, setBarcodeScanHit, applyBarcodeStockUpdate,
   sortedInventory, invSort, toggleSort, updateInv, confirmDelete,
 }) {
@@ -24,9 +24,9 @@ export default function Inventory({
       <div className="page-header">
         <div className="page-title">📦 Inventory</div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="editor-row" style={{ margin: 0 }}>
+          <div className="editor-row" style={{ margin: 0 }} title="Set by your PIN login — changes are logged under this name">
             <span className="editor-label">👤 Editing as:</span>
-            <input className="editor-input" value={editorName} onChange={(e) => setEditorName(e.target.value)} placeholder="Your name" />
+            <span style={{ fontWeight: 600, fontSize: 12 }}>{editorName}</span>
           </div>
           <button className="add-row-btn"
             style={{ borderColor: barcodeMode ? "var(--green)" : "var(--border)", color: barcodeMode ? "var(--green)" : "var(--text)", background: barcodeMode ? "rgba(46,196,182,.08)" : "transparent" }}

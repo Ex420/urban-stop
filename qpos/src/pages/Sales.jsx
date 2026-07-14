@@ -1,12 +1,19 @@
 import DateFilters from "../components/DateFilters";
 import { fmt } from "../utils/format";
+import { exportSalesCsv, csvFilename } from "../utils/csv";
 
 export default function Sales({ filteredSales, totalRev, dateFrom, dateTo, datePreset, setDateFrom, setDateTo, setDatePreset, applyPreset }) {
   return (
     <div className="main-area" style={{ height: "calc(100vh - 52px)", overflowY: "auto" }}>
       <div className="page-header">
         <div className="page-title">📋 Sales Log</div>
-        <div style={{ fontSize: 11, color: "var(--muted)" }}>{filteredSales.length} transactions · {fmt(totalRev)} revenue</div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ fontSize: 11, color: "var(--muted)" }}>{filteredSales.length} transactions · {fmt(totalRev)} revenue</div>
+          <button className="add-row-btn" disabled={filteredSales.length === 0}
+            onClick={() => exportSalesCsv(filteredSales, csvFilename("qpos-sales", dateFrom, dateTo))}>
+            ⬇ Export CSV
+          </button>
+        </div>
       </div>
       <DateFilters dateFrom={dateFrom} dateTo={dateTo} datePreset={datePreset} setDateFrom={setDateFrom} setDateTo={setDateTo} setDatePreset={setDatePreset} applyPreset={applyPreset} />
       {filteredSales.length === 0 && <div style={{ color: "var(--muted)", fontSize: 12, textAlign: "center", marginTop: 60 }}>No transactions in this date range.</div>}
