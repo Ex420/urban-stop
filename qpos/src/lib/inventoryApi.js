@@ -39,7 +39,7 @@ export async function fetchAll() {
 
 // One-time seed when the table is empty (preserves the demo dataset behavior).
 export async function seed(items) {
-  const rows = items.map((i) => ({ id: i.id, ...toRow(i) }));
+  const rows = items.map((i) => toRow(i));
   const { error } = await supabase.from(TABLE).insert(rows);
   if (error) throw error;
 }
